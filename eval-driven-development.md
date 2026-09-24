@@ -7,6 +7,7 @@ title: "把測試全綠的紀律搬進 LLM 世界：eval 驅動開發"
 
 > 作者：Wisely（<https://github.com/Wisely0710>）｜2026-09
 > 這篇文章的每個數字都來自三個公開 repo——[`x402-agent-payments`](https://github.com/Wisely0710/x402-agent-payments)、[`docs-rag`](https://github.com/Wisely0710/docs-rag)、[`llm-toolbox`](https://github.com/Wisely0710/llm-toolbox)（外加一小段 [`grounding-guard`](https://github.com/Wisely0710/grounding-guard)）——每個都附可自行複核的指令。
+> **2026-09-24 更新**：`x402-agent-payments` 補上 requirement 缺 EIP-712 token metadata 的 fail-closed 負向測試（verifier 33 → 35、全 repo 58 測試；錯誤碼增為七個）；本文數字已同步（站台頁面同版）。
 
 ## 為什麼「測試全綠」在 LLM 應用裡不夠用
 
@@ -45,9 +46,9 @@ eval 如果只能在「有金鑰、有模型伺服器」的時候跑，它一定
 
 `x402-agent-payments` 是「讓 agent 自己付錢」的閉環：402 報價 → EIP-712 簽章 → 重試 → 驗證。它沒有 LLM，但它是後面所有 eval 的地基示範：**把風險動作放在閘門擋得住的位置**。
 
-- **56 個測試**（驗證端 33／瀏覽器端 15／MCP 橋 8）＋一條 **30 秒無鏈 demo**（`scripts/demo.sh`：沒有鏈、沒有 facilitator、沒有真實金鑰）——而這條 demo 本身就是 CI 的一個 job。
+- **58 個測試**（驗證端 35／瀏覽器端 15／MCP 橋 8）＋一條 **30 秒無鏈 demo**（`scripts/demo.sh`：沒有鏈、沒有 facilitator、沒有真實金鑰）——而這條 demo 本身就是 CI 的一個 job。
 - agent 端唯一的政策點是預算：`fetch_paid_resource(url, max_amount_wei)` 超過上限就拒絕——**連簽章都不做、也不送第二次請求**。
-- 錯誤碼是穩定介面（六個），每個都帶「下一步」：「拒絕」是常態路徑，所以它必須跟成功一樣好除錯。
+- 錯誤碼是穩定介面（七個），每個都帶「下一步」：「拒絕」是常態路徑，所以它必須跟成功一樣好除錯。
 
 CI 五個 job（矩陣展開為七個實例）全 success（含 git 歷史 secret 掃描與 demo）；clone 後 30 秒可自行複核。
 

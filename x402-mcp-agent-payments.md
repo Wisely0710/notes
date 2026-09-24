@@ -7,6 +7,7 @@ title: "x402 × MCP：讓 agent 自己付錢"
 
 > 作者：Wisely（<https://github.com/Wisely0710>）｜2026-09
 > 專案：<https://github.com/Wisely0710/x402-agent-payments>（MIT）——clone 之後跑 `./scripts/demo.sh`，30 秒跑完本文描述的全部流程（無鏈、無 facilitator、無真實金鑰）。
+> **2026-09-24 更新**：修補 requirement 缺 EIP-712 token metadata 的 fail-closed（新錯誤碼 `invalid_requirement`，verifier 33 → 35、全 repo 58 測試）；本文的測試數、錯誤碼表與 CI run 已同步（站台頁面同版）。
 
 ## 一個沒有帳號的買家
 
@@ -33,11 +34,11 @@ v2 與 v1 最大的差別在這裡：付款資訊全部走**標頭**，402 的�
 
 | 元件 | 語言 | 角色 | 測試 |
 |---|---|---|---|
-| `verifier/` | Python | 賣方：產生 402 challenge、驗 `PAYMENT-SIGNATURE` | 33 |
+| `verifier/` | Python | 賣方：產生 402 challenge、驗 `PAYMENT-SIGNATURE` | 35 |
 | `client/` | TypeScript | 瀏覽器端：402 → 用注入錢包簽章 → 重試 | 15 |
 | `mcp/` | Python | agent 端：MCP 工具 `fetch_paid_resource`，代 agent 付款 | 8 |
 
-合計 56 個測試；client 的執行期依賴是 0。整個付費流程在 localhost 上跑完，**沒有鏈、沒有 facilitator、沒有真實金鑰**——而這條 demo 本身就是 CI 的一個 job。實際輸出長這樣（節錄）：
+合計 58 個測試；client 的執行期依賴是 0。整個付費流程在 localhost 上跑完，**沒有鏈、沒有 facilitator、沒有真實金鑰**——而這條 demo 本身就是 CI 的一個 job。實際輸出長這樣（節錄）：
 
 ```text
 [ agent] GET http://127.0.0.1:…/paid-resource (budget 1000 atomic units)
@@ -65,7 +66,7 @@ x402 v2 的 wire 細節很多——標頭名稱、base64 codec、EIP-712 typed d
 
 ### 3. fail-closed，而且錯誤碼要能程式化
 
-付款被拒的理由不只一種。六個穩定錯誤碼，每個都帶「下一步」：
+付款被拒的理由不只一種。七個穩定錯誤碼，每個都帶「下一步」：
 
 | 錯誤碼 | 什麼時候出現 | 正確的下一步 |
 |---|---|---|
@@ -75,12 +76,13 @@ x402 v2 的 wire 細節很多——標頭名稱、base64 codec、EIP-712 typed d
 | `authorization_mismatch` | 簽的 `to`／`value` 與要求不符 | 拒絕；client 簽了沒被要求的條件 |
 | `requirement_mismatch` | client 挑錯了 `accepts[]` 條目 | 重新挑戰 |
 | `network_mismatch` | 伺服器設定衝突（建構 provider 時就 raise） | 修設定 |
+| `invalid_requirement` | 伺服器自組的 requirement 缺 EIP-712 token metadata（`extra.name`／`extra.version`） | 修設定；provider 不得退回自己的預設 domain 驗簽 |
 
 未知網路、缺 token metadata、不符的 requirement 一律 raise，不降級處理。**「拒絕」是這套系統的常態路徑之一**，所以它必須跟成功一樣好除錯。
 
 ### 4. 不做簽章快取：每次請求都真實驗簽
 
-「這個簽章驗過了，快取起來」聽起來省 CPU，但快取鍵一旦沒把 `from` 綁進去，replay 就能撞到快取的成功結果。這裡選擇讓成功語意**不需要被信任**：不設簽章／nonce 快取，每次都以真實 ECDSA 重驗，並用測試釘住這個行為。成本是每請求多一次驗簽（本機 33 項測試 2.67 秒跑完），很划算。
+「這個簽章驗過了，快取起來」聽起來省 CPU，但快取鍵一旦沒把 `from` 綁進去，replay 就能撞到快取的成功結果。這裡選擇讓成功語意**不需要被信任**：不設簽章／nonce 快取，每次都以真實 ECDSA 重驗，並用測試釘住這個行為。成本是每請求多一次驗簽（本機 35 項測試 1.4 秒跑完），很划算。
 
 ### 5. agent 的唯一政策點：預算在簽章之前擋
 
@@ -109,8 +111,8 @@ cd x402-agent-payments
 ./scripts/demo.sh        # 約 30 秒：402 → 簽章 → 200（無鏈、無 facilitator、無真實金鑰）
 ```
 
-- verifier 33 項（含錯誤碼與時間窗邊界值）、client 15 項（對 `dist/` 測、不需網路）、mcp 8 項（含官方 MCP client 的 stdio 端到端）。
-- CI 五個 job（矩陣展開為七個實例）全 success——secret scan（含 git 歷史）、client、demo、verifier 3.11／3.12、mcp 3.11／3.12；最新一次 run [`35203413606`](https://github.com/Wisely0710/x402-agent-payments/actions/runs/35203413606)。
+- verifier 35 項（含錯誤碼與時間窗邊界值，以及缺 EIP-712 token metadata 即 `invalid_requirement` 的 fail-closed 負向測試）、client 15 項（對 `dist/` 測、不需網路）、mcp 8 項（含官方 MCP client 的 stdio 端到端）。
+- CI 五個 job（矩陣展開為七個實例）全 success——secret scan（含 git 歷史）、client、demo、verifier 3.11／3.12、mcp 3.11／3.12；最新一次 run [`35998798595`](https://github.com/Wisely0710/x402-agent-payments/actions/runs/35998798595)（2026-09-24，fail-closed 修補後）。
 - README 裡的「真實輸出」就是 demo 的實際輸出，不是手寫的示意。
 
 **一句話**：x402 規定「怎麼付」，MCP 提供「怎麼被呼叫」；接起來之後，agent 的付費能力其實是一個邊界問題——**誰在什麼時候被允許簽名**。我的答案是把簽章放在預算閘門之後、把結算留給錢包的主人，然後讓每一種拒絕都有名字。
